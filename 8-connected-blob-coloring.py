@@ -1,33 +1,44 @@
 from PIL import *
 from PIL import Image, ImageDraw
 import numpy as np
+import cv2
 
 
 def main():
     img = Image.open('nums.png')
-    img = img.resize((300, 300))
+    img = img.resize((500, 500))
     img_gray = img.convert('L')  # converts the image to grayscale image
-    # img_bin = img.convert('1') #converts to a binary image, T=128, LOW=0, HIGH=255
-    # img_bin.show()
-    # img_gray.show()
     ONE = 150
     a = np.asarray(img_gray)  # from PIL to np array
     a_bin = threshold(a, 100, ONE, 0)
     im = Image.fromarray(a_bin)  # from np array to PIL format
-    im.show()
+    # im.show()
 
     # a_bin = binary_image(100,100, ONE)   #creates a binary image
     a_bin = np.asarray(im)
-    label = blob_coloring_4_connected(a_bin, ONE)
+    label = blob_coloring_8_connected(a_bin, ONE)
     new_img = Image.fromarray(np.uint8(a_bin))
     new_img.show()
     new_img2 = np2PIL_color(label)
+    colored_img = new_img2.copy()
     new_img2.show()
     rects = rectangles(label)
-    img1 = ImageDraw.Draw(new_img2)
+    rects_img = ImageDraw.Draw(new_img2)
     for i in range(len(rects)):
-        img1.rectangle((rects[i][1], rects[i][0], rects[i][3], rects[i][2]), outline="red")
+        rects_img.rectangle((rects[i][1], rects[i][0], rects[i][3], rects[i][2]), outline="red")
+        #im1 = new_img2.crop((rects[i][1]+1, rects[i][0]+1, rects[i][3], rects[i][2]))
+
+    colored_img.show()
     new_img2.show()
+    im1 = colored_img.crop((23, 26, 56+1, 74+1))
+    im1 = im1.convert('L')
+    im1.show()
+    # a = np.asarray(im1)
+    # im2 = threshold(a, 100, ONE, 0)
+    # im1 = Image.fromarray(im2)
+    # im1.show()
+    print(cv2.moments(np.asarray(im1)))
+    moments = momentsof(np.asarray(im1))
 
 
 def binary_image(nrow, ncol, Value):
@@ -83,7 +94,7 @@ def threshold(im, T, LOW, HIGH):
     return im_out
 
 
-def blob_coloring_4_connected(bim, ONE):
+def blob_coloring_8_connected(bim, ONE):
     max_label = int(10000)
     nrow = bim.shape[0]
     ncol = bim.shape[1]
@@ -188,11 +199,11 @@ def rectangles(labelsarr):
     nrow = labelsarr.shape[0]
     ncol = labelsarr.shape[1]
 
-    xmin = 10000
-    ymin = 10000
-    xmax = 0
-    ymax = 0
-    currentlabel = 0
+    #xmin = 10000
+    #ymin = 10000
+    #xmax = 0
+    #ymax = 0
+    #currentlabel = 0
 
     # Map each different (R,G,B) tuple to a index
     k = 0
@@ -227,6 +238,67 @@ def rectangles(labelsarr):
     print(rectangles)
 
     return rectangles
+
+def momentsof(image):
+    rows = image.shape[0]
+    cols = image.shape[1]
+    raw_moments = [[0,0,0,0], [0,0,0], [0,0], [0]]
+
+    k = 4
+    for i in range(k):
+        for j in range(k):
+            for x in range(rows):
+                for y in range(cols):
+                    raw_moments[i][j] += pow(x, i) * pow(y, j) * image[x][y]
+        k = k-1
+
+
+    central_moments = [[0,0,0,0], [0,0,0], [0,0], [0]]
+    xbar = raw_moments[1][0] / raw_moments[0][0]
+    ybar = raw_moments[0][1] / raw_moments[0][0]
+
+    # central_moments[0][0] = raw_moments[0][0]
+    # central_moments[0][1] = 0
+    # central_moments[1][0] = 0
+    # central_moments[1][1] = raw_moments[1][1] - xbar * raw_moments[0][1]
+    # central_moments[2][0] = raw_moments[2][0] - xbar * raw_moments[1][0]
+    # central_moments[0][2] = raw_moments[0][2] - ybar * raw_moments[0][1]
+    # central_moments[2][1] = raw_moments[2][1] - 2 * xbar * raw_moments[1][1] - ybar * raw_moments[2][0] + 2 * xbar * xbar * raw_moments[0][1]
+    # central_moments[1][2] = raw_moments[1][2] - 2 * ybar * raw_moments[1][1] - xbar * raw_moments[0][2] + 2 * ybar * ybar * raw_moments[1][0]
+    # central_moments[3][0] = raw_moments[3][0] - 3 * xbar * xbar * xbar * raw_moments[2][0] + 2 * xbar * xbar * raw_moments[1][0]
+    # central_moments[0][3] = raw_moments[0][3] - 3 * ybar * ybar * ybar * raw_moments[0][2] + 2 * ybar * ybar * raw_moments[0][1]
+
+    k = 4
+    for i in range(k):
+        for j in range(k):
+            for x in range(rows):
+                for y in range(cols):
+                    central_moments[i][j] += pow(x - xbar, i) * pow(y - ybar, j) * image[x][y]
+        k = k-1
+
+
+    scale_invariants = [[0,0,0,0], [0,0,0], [0,0], [0]]
+
+    k = 4
+    for i in range(k):
+        for j in range(k):
+            scale_invariants[i][j] = central_moments[i][j] / pow(central_moments[0][0], 1 + (i+j)/2)
+        k = k - 1
+
+
+    rotation_invariants = [0,0,0,0,0,0,0]
+
+    # indices indicate I sub index+1
+    rotation_invariants[0] = scale_invariants[2][0] + scale_invariants[0][2]
+    rotation_invariants[1] = pow(rotation_invariants[0], 2) + 4 * pow(3*scale_invariants[1][1], 2)
+    rotation_invariants[2] = pow(scale_invariants[3][0] - 3 * scale_invariants[1][2], 2) + pow(3 * scale_invariants[2][1] - scale_invariants[0][3], 2)
+    rotation_invariants[3] = pow(scale_invariants[3][0] + scale_invariants[1][2], 2) + pow(scale_invariants[2][1] + scale_invariants[0][3], 2)
+    rotation_invariants[4] = (scale_invariants[3][0] - 3 * scale_invariants[1][2]) * (scale_invariants[3][0] + scale_invariants[1][2]) * (pow(scale_invariants[3][0] + scale_invariants[1][2], 2) + 3 * pow(scale_invariants[2][1] + scale_invariants[0][3], 2)) + (3 * scale_invariants[2][1] - scale_invariants[0][3]) * (scale_invariants[2][1] + scale_invariants[0][3]) * (3 * pow(scale_invariants[3][0] + scale_invariants[1][2], 2) - pow(scale_invariants[2][1] + scale_invariants[0][3], 2))
+    rotation_invariants[5] = (scale_invariants[2][0] - scale_invariants[0][2]) * (pow(scale_invariants[3][0] + scale_invariants[1][2], 2) + pow(scale_invariants[2][1] + scale_invariants[0][3], 2)) + 4 * scale_invariants[1][1] * (scale_invariants[3][0] + scale_invariants[1][2]) * (scale_invariants[2][1] + scale_invariants[0][3])
+    rotation_invariants[6] = (3 * scale_invariants[2][1] - scale_invariants[3][0]) * (scale_invariants[3][0] + scale_invariants[1][2]) * (pow(scale_invariants[3][0] + scale_invariants[1][2], 2) - 3 * pow(scale_invariants[2][1] + scale_invariants[0][3], 2)) + (scale_invariants[3][0] - 3 * scale_invariants[1][2]) * (scale_invariants[2][1] + scale_invariants[0][3]) * (3 * pow(scale_invariants[3][0] + scale_invariants[1][2], 2) - pow(scale_invariants[2][1] + scale_invariants[0][3], 2))
+
+
+    return rotation_invariants
 
 
 if __name__ == '__main__':
