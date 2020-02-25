@@ -1,85 +1,83 @@
 from PIL import Image, ImageDraw
 import numpy as np
 
+DICTIONARY_SIZE = 10 #36 if alphabet is included
+THRESHOLD = 150
+
 class ImageReader:
-    imagedest = ""
-
-    def __init__(self, dest):
-        self.imagedest = dest
-
-
-    def launch(self):
-        img = Image.open(self.imagedest)
-        img = img.resize((500, 500))
-        img_gray = img.convert('L')  # converts the image to grayscale image
-        ONE = 150
-        a = np.asarray(img_gray)  # from PIL to np array
-        a_bin = self.threshold(a, 100, ONE, 0)
-        im = Image.fromarray(a_bin)  # from np array to PIL format
-        # im.show()
-
-        # a_bin = binary_image(100,100, ONE)   #creates a binary image
+    def launch(self, dest):
+        img = Image.open(dest)
+        im = self.to_greyscale(img) #greyscale image
         a_bin = np.asarray(im)
-        label = self.blob_coloring_8_connected(a_bin, ONE)
+        label = self.blob_coloring_8_connected(a_bin)
         new_img = Image.fromarray(np.uint8(a_bin))
-        #new_img.show()
-        new_img2 = self.np2PIL_color(label)
-        #new_img2.show() # renkli fotoğraf
         rects = self.rectangles(label)
-        rects_img = ImageDraw.Draw(img)
-        characters = []  # every character as image in 100x100 in greyscale
+        imgdraw = ImageDraw.Draw(img)
+
+        list = []  # [0][0] => first hu moment of number zero
+        with open('values') as fp:
+            for line in fp:
+                list.append(line[1:len(line) - 2].split(", "))
+
+        # file = open("values", "w")
+
         for i in range(len(rects)):
-            rects_img.rectangle((rects[i][1], rects[i][0], rects[i][3], rects[i][2]), outline="red")
-            characters.append(
-                new_img.crop((rects[i][1], rects[i][0], rects[i][3] + 1, rects[i][2] + 1)).resize((100, 100)))
+            #   temp = Image.new('L', (200,200))
+            imgdraw.rectangle((rects[i][1], rects[i][0], rects[i][3], rects[i][2]), outline="red")
+            charimg = new_img.crop((rects[i][1] - 1, rects[i][0] - 1, rects[i][3] + 2, rects[i][2] + 2)).resize(
+                (50, 50))
+            #   temp.paste(charimg, (50, 50))
+            #   charimg = temp
+            # charimg.show()
+            characterstr = self.matchshapes(charimg, list)
+            imgdraw.text(((rects[i][1] + rects[i][3]) / 2, rects[i][0] - 10), characterstr, fill="red")
+            # file.write(str(momentsof(np.asarray(charimg))) + "\n")
 
-        img.show() #original image with rectangles on characters
+        # file.close()
 
+        img.show()  # first image with rects and text
 
-    def storesample(self, sample, filename):
-        samplechars = []
+        # sampleize
+        # file = open("values", "w")
+        # for i in characters:
+        #    print(momentsof(np.asarray(i)))
+        #    file.write(str(momentsof(np.asarray(i))) + "\n")
+        # file.close()
 
-        file = open("values", "w")
-        for i in samplechars:
-            file.write(str(momentsof(np.asarray(i))) + "\n")
-        file.close()
+    def to_greyscale(self, img):
+        img = img.convert('RGB')
+        img_gray = img.convert('L')
+        a_bin = self.threshold(np.asarray(img_gray), 100, THRESHOLD, 0)
+        im = Image.fromarray(a_bin)
+        return im
+
+    def storesample(self, sample, character):
+        index = 0
+        if character[0].isalpha(): #convert to lowercase later on
+            index = int(ord(character) - 96)
+        elif character[0].isdigit():
+            index = int(character[0])
+
+        momentsdb = np.load("momentsdb.npy")
+
+        for i in range(len(momentsdb)):
+            for j in range(DICTIONARY_SIZE):
+                if not np.any(momentsdb[i][j]):
+                    momentsdb[i][index] = self.momentsof(sample)
+                    np.save("momentsdb", momentsdb)
+                    return None
 
     def matchshapes(self, shape, samplearr):
-        shapemoments = momentsof(np.asarray(shape))
+        shapemoments = self.momentsof(np.asarray(shape))
         difflist = [0] * 10
 
-        for i in range(10):
+        for i in range(DICTIONARY_SIZE):
             for j in range(7):
-                difflist[i] += float(samplearr[i][j]) - shapemoments[j]
+                difflist[i] += abs(float(samplearr[i][j]) - shapemoments[j])
 
-
-    def binary_image(self, nrow, ncol, Value):
-        x, y = np.indices((nrow, ncol))
-        mask_lines = np.zeros(shape=(nrow, ncol))
-
-        x0, y0, r0 = 30, 30, 10
-        x1, y1, r1 = 70, 30, 10
-
-        for i in range(50, 70):
-            mask_lines[i][i] = 1
-            mask_lines[i][i + 1] = 1
-            mask_lines[i][i + 2] = 1
-            mask_lines[i][i + 3] = 1
-            mask_lines[i][i + 6] = 1
-            mask_lines[i - 20][90 - i + 1] = 1
-            mask_lines[i - 20][90 - i + 2] = 1
-            mask_lines[i - 20][90 - i + 3] = 1
-
-        # mask_circle1 = np.abs((x - x0) ** 2 + (y - y0) ** 2 - r0 ** 2 ) <= 5
-        mask_square1 = np.fmax(np.absolute(x - x1), np.absolute(y - y1)) <= r1
-        # mask_square2 = np.fmax(np.absolute( x - x2), np.absolute( y - y2)) <= r2
-        # mask_square3 = np.fmax(np.absolute( x - x3), np.absolute( y - y3)) <= r3
-        # mask_square4 =  np.fmax(np.absolute( x - x4), np.absolute( y - y4)) <= r4
-        # imge = np.logical_or ( np.logical_or(mask_lines, mask_circle1), mask_square1) * Value
-        imge = np.logical_or(mask_lines, mask_square1) * Value
-        # imge = np.logical_or(mask_lines, mask_circle1) * Value
-
-        return imge
+        # print(difflist.index(min(difflist)))
+        # print('\n'.join(map(str, difflist)))
+        return str(difflist.index(min(difflist)))
 
     def np2PIL(self, im):
         img = Image.fromarray(im, 'RGB')
@@ -100,10 +98,11 @@ class ImageReader:
                     im_out[i][j] = HIGH
         return im_out
 
-    def blob_coloring_8_connected(self, bim, ONE):
+    def blob_coloring_8_connected(self, bim):
         max_label = int(10000)
         nrow = bim.shape[0]
         ncol = bim.shape[1]
+        print("nrow, ncol", nrow, ncol)
         im = np.zeros(shape=(nrow, ncol), dtype=int)
         a = np.zeros(shape=max_label, dtype=int)
         a = np.arange(0, max_label, dtype=int)
@@ -131,7 +130,7 @@ class ImageReader:
                 label_ur = im[i - 1][j + 1]
 
                 im[i][j] = max_label
-                if c == ONE:
+                if c == THRESHOLD:
                     min_label = min(label_u, label_l, label_ul, label_ur)
                     if min_label == max_label:
                         k += 1
@@ -163,7 +162,7 @@ class ImageReader:
         for i in range(nrow):
             for j in range(ncol):
 
-                if bim[i][j] == ONE:
+                if bim[i][j] == THRESHOLD:
                     im[i][j] = a[im[i][j]]
                     if im[i][j] == max_label:
                         im[i][j] == 0
@@ -202,12 +201,6 @@ class ImageReader:
         nrow = labelsarr.shape[0]
         ncol = labelsarr.shape[1]
 
-        # xmin = 10000
-        # ymin = 10000
-        # xmax = 0
-        # ymax = 0
-        # currentlabel = 0
-
         # Map each different (R,G,B) tuple to a index
         k = 0
         colorindices = {}
@@ -238,6 +231,7 @@ class ImageReader:
                 if j > rectangles[colorindices.get(rgb)][3]:
                     rectangles[colorindices.get(rgb)][3] = j
 
+        print(rectangles)
 
         return rectangles
 
@@ -257,17 +251,6 @@ class ImageReader:
         central_moments = [[0, 0, 0, 0], [0, 0, 0], [0, 0], [0]]
         xbar = raw_moments[1][0] / raw_moments[0][0]
         ybar = raw_moments[0][1] / raw_moments[0][0]
-
-        # central_moments[0][0] = raw_moments[0][0]
-        # central_moments[0][1] = 0
-        # central_moments[1][0] = 0
-        # central_moments[1][1] = raw_moments[1][1] - xbar * raw_moments[0][1]
-        # central_moments[2][0] = raw_moments[2][0] - xbar * raw_moments[1][0]
-        # central_moments[0][2] = raw_moments[0][2] - ybar * raw_moments[0][1]
-        # central_moments[2][1] = raw_moments[2][1] - 2 * xbar * raw_moments[1][1] - ybar * raw_moments[2][0] + 2 * xbar * xbar * raw_moments[0][1]
-        # central_moments[1][2] = raw_moments[1][2] - 2 * ybar * raw_moments[1][1] - xbar * raw_moments[0][2] + 2 * ybar * ybar * raw_moments[1][0]
-        # central_moments[3][0] = raw_moments[3][0] - 3 * xbar * xbar * xbar * raw_moments[2][0] + 2 * xbar * xbar * raw_moments[1][0]
-        # central_moments[0][3] = raw_moments[0][3] - 3 * ybar * ybar * ybar * raw_moments[0][2] + 2 * ybar * ybar * raw_moments[0][1]
 
         k = 4
         for i in range(k):
@@ -289,31 +272,54 @@ class ImageReader:
 
         # indices indicate I sub index+1
         rotation_invariants[0] = scale_invariants[2][0] + scale_invariants[0][2]
-        rotation_invariants[1] = pow(rotation_invariants[0], 2) + 4 * pow(3 * scale_invariants[1][1], 2)
+        rotation_invariants[1] = pow(scale_invariants[2][0] - scale_invariants[0][2], 2) + 4 * pow(
+            scale_invariants[1][1], 2)
         rotation_invariants[2] = pow(scale_invariants[3][0] - 3 * scale_invariants[1][2], 2) + pow(
             3 * scale_invariants[2][1] - scale_invariants[0][3], 2)
         rotation_invariants[3] = pow(scale_invariants[3][0] + scale_invariants[1][2], 2) + pow(
             scale_invariants[2][1] + scale_invariants[0][3], 2)
         rotation_invariants[4] = (scale_invariants[3][0] - 3 * scale_invariants[1][2]) * (
                 scale_invariants[3][0] + scale_invariants[1][2]) * (
-                                         pow(scale_invariants[3][0] + scale_invariants[1][2], 2) + 3 * pow(
+                                         pow(scale_invariants[3][0] + scale_invariants[1][2], 2) - 3 * pow(
                                      scale_invariants[2][1] + scale_invariants[0][3], 2)) + (
                                          3 * scale_invariants[2][1] - scale_invariants[0][3]) * (
                                          scale_invariants[2][1] + scale_invariants[0][3]) * (
                                          3 * pow(scale_invariants[3][0] + scale_invariants[1][2], 2) - pow(
                                      scale_invariants[2][1] + scale_invariants[0][3], 2))
         rotation_invariants[5] = (scale_invariants[2][0] - scale_invariants[0][2]) * (
-                pow(scale_invariants[3][0] + scale_invariants[1][2], 2) + pow(
+                pow(scale_invariants[3][0] + scale_invariants[1][2], 2) - pow(
             scale_invariants[2][1] + scale_invariants[0][3], 2)) + 4 * scale_invariants[1][1] * (
                                          scale_invariants[3][0] + scale_invariants[1][2]) * (
                                          scale_invariants[2][1] + scale_invariants[0][3])
-        rotation_invariants[6] = (3 * scale_invariants[2][1] - scale_invariants[3][0]) * (
+        rotation_invariants[6] = (3 * scale_invariants[2][1] - scale_invariants[0][3]) * (
                 scale_invariants[3][0] + scale_invariants[1][2]) * (
                                          pow(scale_invariants[3][0] + scale_invariants[1][2], 2) - 3 * pow(
-                                     scale_invariants[2][1] + scale_invariants[0][3], 2)) + (
+                                     scale_invariants[2][1] + scale_invariants[0][3], 2)) - (
                                          scale_invariants[3][0] - 3 * scale_invariants[1][2]) * (
                                          scale_invariants[2][1] + scale_invariants[0][3]) * (
                                          3 * pow(scale_invariants[3][0] + scale_invariants[1][2], 2) - pow(
                                      scale_invariants[2][1] + scale_invariants[0][3], 2))
 
+        # print(cv2.HuMoments(cv2.moments(image)))
+        # print(rotation_invariants)
+
+        for i in range(7):
+            rotation_invariants[i] = np.log10(abs(float(rotation_invariants[i])))
+
         return rotation_invariants
+
+    def getsamplecount(self, character):
+        count = 0
+        index = 0
+        if character[0].isalpha(): #convert to lowercase later on
+            index = int(ord(character) - 96)
+        elif character[0].isdigit():
+            index = int(character[0])
+
+        momentsdb = np.load("momentsdb.npy")
+
+        for i in range(len(momentsdb)):
+            if np.any(momentsdb[i][index]):
+                count = count+1
+
+        return count
