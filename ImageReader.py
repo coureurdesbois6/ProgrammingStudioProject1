@@ -1,11 +1,16 @@
 from PIL import Image, ImageDraw
 import numpy as np
 
-DICTIONARY_SIZE = 10 #36 if alphabet is included
+DICTIONARY_SIZE = 36 #36 if alphabet is included, #10 if only numbers
 THRESHOLD = 150
+SAMPLE_SHAPE = (25,25)
+HU = "momentsdb.npy"
+R = "momentsdbr.npy"
+ZERNIKE = "momentsdbz.npy"
 
 class ImageReader:
-    def launch(self, dest):
+    #Detects and labels characters in given image file
+    def launch(self, dest, methoddb=HU):
         img = Image.open(dest)
         im = self.to_greyscale(img) #greyscale image
         a_bin = np.asarray(im)
@@ -13,37 +18,33 @@ class ImageReader:
         new_img = Image.fromarray(np.uint8(a_bin))
         rects = self.rectangles(label)
         imgdraw = ImageDraw.Draw(img)
-
-        list = []  # [0][0] => first hu moment of number zero
-        with open('values') as fp:
-            for line in fp:
-                list.append(line[1:len(line) - 2].split(", "))
-
-        # file = open("values", "w")
+        chars = []
 
         for i in range(len(rects)):
-            #   temp = Image.new('L', (200,200))
             imgdraw.rectangle((rects[i][1], rects[i][0], rects[i][3], rects[i][2]), outline="red")
             charimg = new_img.crop((rects[i][1] - 1, rects[i][0] - 1, rects[i][3] + 2, rects[i][2] + 2)).resize(
-                (50, 50))
-            #   temp.paste(charimg, (50, 50))
-            #   charimg = temp
-            # charimg.show()
-            characterstr = self.matchshapes(charimg, list)
-            imgdraw.text(((rects[i][1] + rects[i][3]) / 2, rects[i][0] - 10), characterstr, fill="red")
-            # file.write(str(momentsof(np.asarray(charimg))) + "\n")
+                SAMPLE_SHAPE)
+            #characterstr = self.matchshapes(charimg, methoddb=methoddb)
+            characterstr = 0
+            chars.append(characterstr)
+            imgdraw.text(((rects[i][1] + rects[i][3]) / 2, rects[i][0] - 10), str(int(i)), fill="red")
 
-        # file.close()
+        with open('output.txt', 'w') as file:
+            file.write(dest + "\n")
+            if methoddb == HU:
+                file.write("method: Hu moments\n")
+            elif methoddb == R:
+                file.write("method: R moments\n")
+            elif methoddb == ZERNIKE:
+                file.write("method: Zernike moments\n")
+            file.write("Detected " + str(len(rects)) + " characters\n")
+            for i in range(len(rects)):
+                file.write(str(rects[i]) + " = " + str(chars[i]) + "\n")
 
-        img.show()  # first image with rects and text
 
-        # sampleize
-        # file = open("values", "w")
-        # for i in characters:
-        #    print(momentsof(np.asarray(i)))
-        #    file.write(str(momentsof(np.asarray(i))) + "\n")
-        # file.close()
+        img.show()  # first image with rectangles and text
 
+    #converts given image to greyscale image
     def to_greyscale(self, img):
         img = img.convert('RGB')
         img_gray = img.convert('L')
@@ -51,41 +52,96 @@ class ImageReader:
         im = Image.fromarray(a_bin)
         return im
 
-    def storesample(self, sample, character):
+    #maps given character to a number:
+    #0-9 -> 0-9
+    #
+    def char_to_index(self, character):
         index = 0
-        if character[0].isalpha(): #convert to lowercase later on
-            index = int(ord(character) - 96)
+        if character[0].isalpha():
+            index = int(ord(character.lower()) - 87)
         elif character[0].isdigit():
             index = int(character[0])
 
-        momentsdb = np.load("momentsdb.npy")
+        return index
+
+    def index_to_char(self, index):
+        char = 0
+        if index >= 10:
+            char = chr(int(index + 55))
+        elif index < 10:
+            char = index
+
+        return str(char)
+
+    def storesample(self, sample, character, momentsdb=None, methoddb=HU):
+        index = self.char_to_index(character)
+
+        func = 0
+        if momentsdb is None:
+            try:
+                momentsdb = np.load(methoddb)
+            except:
+                size = 7
+                if methoddb == HU:
+                    size = 7
+                elif methoddb == R:
+                    size = 10
+                elif methoddb == ZERNIKE:
+                    size = 12
+                momentsdb = np.zeros(shape=(1, 36, size), dtype=float)
+                np.save(methoddb, momentsdb)
+
+        if methoddb == HU:
+            func = self.hu_moments(sample)
+        elif methoddb == R:
+            func = self.r_moments(self.hu_moments(sample))
+        elif methoddb == ZERNIKE:
+            func = self.zernike_moments(sample)
 
         for i in range(len(momentsdb)):
             for j in range(DICTIONARY_SIZE):
                 if not np.any(momentsdb[i][j]):
-                    momentsdb[i][index] = self.momentsof(sample)
-                    np.save("momentsdb", momentsdb)
+                    momentsdb[i][index] = func
+                    print(momentsdb[i][index], i, index)
+                    np.save(methoddb, momentsdb)
                     return None
 
-    def matchshapes(self, shape, samplearr):
-        shapemoments = self.momentsof(np.asarray(shape))
-        difflist = [0] * 10
+        size = 7
+        if methoddb == HU:
+            size = 7
+        elif methoddb == R:
+            size = 10
+        elif methoddb == ZERNIKE:
+            size = 12
 
-        for i in range(DICTIONARY_SIZE):
-            for j in range(7):
-                difflist[i] += abs(float(samplearr[i][j]) - shapemoments[j])
+        newdim = np.zeros(shape=(DICTIONARY_SIZE, size), dtype=float)
+        momentsdb = np.vstack((momentsdb, newdim[None]))
+        self.storesample(sample, character, momentsdb=momentsdb, methoddb=methoddb)
 
-        # print(difflist.index(min(difflist)))
-        # print('\n'.join(map(str, difflist)))
-        return str(difflist.index(min(difflist)))
 
-    def np2PIL(self, im):
-        img = Image.fromarray(im, 'RGB')
-        return img
+    def matchshapes(self, shape, methoddb=HU):
+        momentsdb = np.load(methoddb)
+        func = 0
+        size = 7
+        if methoddb == HU:
+            func = self.hu_moments(np.asarray(shape))
+            size = 7
+        elif methoddb == R:
+            func = self.r_moments(self.hu_moments(np.asarray(shape)))
+            size = 10
+        elif methoddb == ZERNIKE:
+            func = self.zernike_moments(np.asarray(shape))
+            size = 12
+        shapemoments = func
+        difflist = [0] * DICTIONARY_SIZE
 
-    def np2PIL_color(self, im):
-        img = Image.fromarray(np.uint8(im))
-        return img
+        for i in range(len(momentsdb)):
+            for j in range(DICTIONARY_SIZE):
+                numofsamples = self.getsamplecount(self.index_to_char(int(j)), methoddb=methoddb)
+                for k in range(size):
+                    difflist[j] += abs(float(momentsdb[i][j][k] - shapemoments[k])) / numofsamples
+
+        return str(self.index_to_char(difflist.index(min(difflist))))
 
     def threshold(self, im, T, LOW, HIGH):
         (nrows, ncols) = im.shape
@@ -102,9 +158,7 @@ class ImageReader:
         max_label = int(10000)
         nrow = bim.shape[0]
         ncol = bim.shape[1]
-        print("nrow, ncol", nrow, ncol)
         im = np.zeros(shape=(nrow, ncol), dtype=int)
-        a = np.zeros(shape=max_label, dtype=int)
         a = np.arange(0, max_label, dtype=int)
         color_map = np.zeros(shape=(max_label, 3), dtype=np.uint8)
         color_im = np.zeros(shape=(nrow, ncol, 3), dtype=np.uint8)
@@ -151,14 +205,12 @@ class ImageReader:
 
                 else:
                     im[i][j] = max_label
-        # final reduction in label array
         for i in range(k + 1):
             index = i
             while a[index] != index:
                 index = a[index]
             a[i] = a[index]
 
-        # second pass to resolve labels and show label colors
         for i in range(nrow):
             for j in range(ncol):
 
@@ -175,7 +227,6 @@ class ImageReader:
         return color_im
 
     def update_array(self, a, label1, label2):
-        index = lab_small = lab_large = 0
         if label1 < label2:
             lab_small = label1
             lab_large = label2
@@ -192,7 +243,7 @@ class ImageReader:
                 temp = a[index]
                 a[index] = lab_small
                 index = temp
-            else:  # a[index] == lab_small
+            else:
                 break
 
         return
@@ -231,11 +282,15 @@ class ImageReader:
                 if j > rectangles[colorindices.get(rgb)][3]:
                     rectangles[colorindices.get(rgb)][3] = j
 
-        print(rectangles)
+        if rectangles[0][2] == nrow-1 and rectangles[0][3] == ncol-1:
+            rectangles = np.delete(rectangles, 0, 0)
 
+        rectangles = sorted(rectangles, key=lambda item: ((item[2] - item[0])/2, (item[3] - item[1])/2))
+        #x0, y0, x1, y1
+        #rects[i][1], rects[i][0], rects[i][3], rects[i][2]
         return rectangles
 
-    def momentsof(self, image):
+    def hu_moments(self, image):
         rows = image.shape[0]
         cols = image.shape[1]
         raw_moments = [[0, 0, 0, 0], [0, 0, 0], [0, 0], [0]]
@@ -308,18 +363,33 @@ class ImageReader:
 
         return rotation_invariants
 
-    def getsamplecount(self, character):
-        count = 0
-        index = 0
-        if character[0].isalpha(): #convert to lowercase later on
-            index = int(ord(character) - 96)
-        elif character[0].isdigit():
-            index = int(character[0])
+    def r_moments(self, hu_moments):
+        r_moments = [] * 10
+        r_moments[0] = np.sqrt(hu_moments[1]) / hu_moments[0]
+        r_moments[1] = (hu_moments[0] + np.sqrt(hu_moments[1])) / (hu_moments[0] - np.sqrt(hu_moments[1]))
+        r_moments[2] = np.sqrt(hu_moments[2]) / np.sqrt(hu_moments[3])
+        r_moments[3] = np.sqrt(hu_moments[2]) / np.sqrt(abs(hu_moments[4]))
+        r_moments[4] = np.sqrt(hu_moments[3]) / np.sqrt(abs(hu_moments[4]))
+        r_moments[5] = abs(hu_moments[5]) / (hu_moments[0] * hu_moments[2])
+        r_moments[6] = abs(hu_moments[5]) / (hu_moments[0] * np.sqrt(abs(hu_moments[4])))
+        r_moments[7] = abs(hu_moments[5]) / (hu_moments[2] * np.sqrt(hu_moments[1]))
+        r_moments[8] = abs(hu_moments[5]) / (np.sqrt(hu_moments[1] * abs(hu_moments[4])))
+        r_moments[9] = abs(hu_moments[4]) / (hu_moments[2] * hu_moments[3])
 
-        momentsdb = np.load("momentsdb.npy")
+        return r_moments
+
+    def getsamplecount(self, character, methoddb=HU):
+        count = 0
+        index = self.char_to_index(character)
+
+        momentsdb = np.load(methoddb)
 
         for i in range(len(momentsdb)):
             if np.any(momentsdb[i][index]):
                 count = count+1
 
         return count
+
+    #TODO
+    def zernike_moments(self, param):
+        return 0

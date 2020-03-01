@@ -7,12 +7,26 @@ import tkinter as tk
 from PIL import ImageTk
 import ImageReader as ir
 
+method = ir.HU
 
 def searchdirectory(img, imgbox, dirtextbox, ermsgbox=None, size=(300, 400)):
     directory = filedialog.askopenfilename()
     dirtextbox.delete(0, len(dirtextbox.get()))
     dirtextbox.insert(0, directory)
     loaddirectory(img, dirtextbox.get(), imgbox, ermsgbox=ermsgbox, size=size)
+
+def reset():
+    size = 0
+
+    if method == ir.HU:
+        size = 7
+    elif method == ir.R:
+        size = 10
+    elif method == ir.ZERNIKE:
+        size = 12
+    momentsdb = np.zeros(shape=(1, 36, size), dtype=float)
+
+    np.save(method, momentsdb)
 
 
 def loaddirectory(imge, dir, imgbox, ermsgbox=None, size=(300, 400)):
@@ -30,13 +44,13 @@ def loaddirectory(imge, dir, imgbox, ermsgbox=None, size=(300, 400)):
 
 
 def launch():
+    global method
     global dirtextbox
     try:
         im = Image.open(dirtextbox.get())
         print("working...")
-        # make exception specific
-        ir.ImageReader().launch(dirtextbox.get())
-    except:
+        ir.ImageReader().launch(dirtextbox.get(), methoddb=method)
+    except:        # TODO: make exception specific
         direrrmsg.config(text="CANNOT OPERATE ON FILE", fg="red")
 
 
@@ -44,8 +58,13 @@ def savesample(chardirtextbox, character):
     image = Image.open(chardirtextbox.get())
     imagereader = ir.ImageReader()
     image = imagereader.to_greyscale(image)
-    image.show()
-    imagereader.storesample(np.asarray(image), character)
+    rectangles = imagereader.rectangles(imagereader.blob_coloring_8_connected(np.asarray(image)))
+    charimg = image.crop(
+        (rectangles[0][1] - 1, rectangles[0][0] - 1, rectangles[0][3] + 2, rectangles[0][2] + 2)).resize(
+        ir.SAMPLE_SHAPE)
+    #charimg.show()  # show greyscale image, unnecessary.
+    imagereader.storesample(np.asarray(charimg), character, methoddb=method)
+    print("Saved", character)
 
 
 def onselect(evt, textbox):
@@ -55,6 +74,21 @@ def onselect(evt, textbox):
     number = ir.ImageReader().getsamplecount(value)
     text = value + " has " + str(number) + " samples stored."
     textbox.config(text=text)
+
+
+def savesampleset(chardirtextbox, orderbox):
+    order = orderbox.get()
+    image = Image.open(chardirtextbox.get())
+    imagereader = ir.ImageReader()
+    image = imagereader.to_greyscale(image)
+    rectangles = imagereader.rectangles(imagereader.blob_coloring_8_connected(np.asarray(image)))
+    print(len(rectangles))
+    for i in range(len(rectangles)):
+        charimg = image.crop(
+            (rectangles[i][1] - 1, rectangles[i][0] - 1, rectangles[i][3] + 2, rectangles[i][2] + 2)).resize(
+            ir.SAMPLE_SHAPE)
+        imagereader.storesample(np.asarray(charimg), order[i], methoddb=method)
+    print("Saved set")
 
 
 def options_window():  # use .state to check if it is already up
@@ -87,7 +121,7 @@ def options_window():  # use .state to check if it is already up
     charimgframe = tk.Frame(options, height=50, width=50, padx=40)
 
     pilimg1 = Image.open("sample.jpg")
-    pilimg1.thumbnail((50, 50), PIL.Image.ANTIALIAS)
+    pilimg1.thumbnail(ir.SAMPLE_SHAPE, PIL.Image.ANTIALIAS)
     charimg = ImageTk.PhotoImage(pilimg1)
     charimagebox = tk.Label(charimgframe, image=charimg)
     charimagebox.image = charimg  # keep img as reference to avoid a certain bug
@@ -96,10 +130,10 @@ def options_window():  # use .state to check if it is already up
     chardirtextbox = tk.Entry(searchframe, text="")
     chardirselect = tk.Button(searchframe, text="Search",
                               command=lambda: searchdirectory("charimg", charimagebox, chardirtextbox,
-                                                              ermsgbox=chardirerrmsg, size=(50, 50)))
+                                                              ermsgbox=chardirerrmsg, size=ir.SAMPLE_SHAPE))
     chardirload = tk.Button(searchframe, text="Load",
                             command=lambda: loaddirectory("charimg", dirtextbox, chardirtextbox.get(),
-                                                          ermsgbox=chardirerrmsg, size=(50, 50)))
+                                                          ermsgbox=chardirerrmsg, size=ir.SAMPLE_SHAPE))
     chardirerrmsg = tk.Label(searchframe, text="")
 
     chardirtextbox.grid(row=0, column=0)
@@ -108,19 +142,36 @@ def options_window():  # use .state to check if it is already up
     chardirerrmsg.grid(row=1, column=0)
 
     searchframe.pack()
-    loadbutton = tk.Button(middleframe, text="Save sample", command=lambda: savesample(chardirtextbox, characterslist.get(characterslist.curselection())))
-    loadbutton.pack()
+    methodstropt = tk.StringVar(launchframe)
+    methodstropt.set("HU")
+    methodselectopt = tk.OptionMenu(middleframe, methodstropt, "HU", "R", "ZERNIKE", command=method_select)
+    savebutton1 = tk.Button(middleframe, text="Save sample", command=lambda: savesample(chardirtextbox, characterslist.get(characterslist.curselection())))
+    orderbox = tk.Entry(middleframe)
+    orderbox.insert(tk.END, "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
+    infotext2 = tk.Label(middleframe, text="Enter the order of characters below")
+    savebutton2 = tk.Button(middleframe, text="Save sample set", command=lambda: savesampleset(chardirtextbox, orderbox))
+    methodselectopt.pack()
+    savebutton1.pack()
+    savebutton2.pack()
+    infotext2.pack()
+    orderbox.pack()
+    resetbutton = tk.Button(options, text="Reset samples", command=lambda: reset())
 
     scrollframe.grid(row=0, column=0)
     infoframe.grid(row=0, column=1)
     charimgframe.grid(row=0, column=2)
+    resetbutton.grid(row=1, column=2)
     middleframe.grid(row=0, column=3)
 
 
-def debug_window():
-    debug = tk.Toplevel(root)
-    b = tk.Button(debug, text="hi", command=lambda: launch())
-    b.pack()
+def method_select(value):
+    global method
+    if value == "HU":
+        method = ir.HU
+    elif value == "R":
+        method == ir.R
+    elif value == "ZERNIKE":
+        method == ir.ZERNIKE
 
 
 root = tk.Tk()
@@ -153,10 +204,10 @@ direrrmsg.grid(row=1, column=0)
 
 dirframe.grid(row=0, columnspan=2)
 
-method = tk.StringVar(launchframe)
-method.set("Hu Moments")
+methodstr = tk.StringVar(launchframe)
+methodstr.set("HU")
 
-methodselect = tk.OptionMenu(launchframe, method, "Hu Moments", "Zernike Moments", "PLACEHOLDER")
+methodselect = tk.OptionMenu(launchframe, methodstr, "HU", "R", "ZERNIKE", command=method_select)
 launchbutton = tk.Button(launchframe, text="Launch", command=lambda: launch())
 
 methodselect.grid(row=1, column=0)
@@ -167,13 +218,9 @@ launchframe.pack()
 bottomframe = tk.Frame(userframe)
 
 optionsframe = tk.Frame(bottomframe, bd=20)
-debugframe = tk.Frame(bottomframe, bd=20)
-optionsbutton = tk.Button(optionsframe, text="Options", command=lambda: options_window())
-debugbutton = tk.Button(debugframe, text="Debug", command=lambda: debug_window())
+optionsbutton = tk.Button(optionsframe, text="Edit lookup database", command=lambda: options_window())
 optionsbutton.pack()
-debugbutton.pack()
 optionsframe.grid(row=0, column=0)
-debugframe.grid(row=0, column=1)
 bottomframe.pack()
 
 #                   #
@@ -185,6 +232,7 @@ pilimg.thumbnail((300, 400), PIL.Image.ANTIALIAS)
 img = ImageTk.PhotoImage(pilimg)
 imagebox = tk.Label(imgframe, image=img)
 imagebox.image = img  # keep img as reference to avoid a certain bug
+
 
 imagebox.pack(expand=1)
 imgframe.pack_propagate(False)
