@@ -24,10 +24,9 @@ class ImageReader:
             imgdraw.rectangle((rects[i][1], rects[i][0], rects[i][3], rects[i][2]), outline="red")
             charimg = new_img.crop((rects[i][1] - 1, rects[i][0] - 1, rects[i][3] + 2, rects[i][2] + 2)).resize(
                 SAMPLE_SHAPE)
-            #characterstr = self.matchshapes(charimg, methoddb=methoddb)
-            characterstr = 0
+            characterstr = self.matchshapes(charimg, methoddb=methoddb)
             chars.append(characterstr)
-            imgdraw.text(((rects[i][1] + rects[i][3]) / 2, rects[i][0] - 10), str(int(i)), fill="red")
+            imgdraw.text(((rects[i][1] + rects[i][3]) / 2, rects[i][0] - 10), characterstr, fill="red")
 
         with open('output.txt', 'w') as file:
             file.write(dest + "\n")
