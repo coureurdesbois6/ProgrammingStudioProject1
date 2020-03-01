@@ -54,7 +54,7 @@ class ImageReader:
 
     #maps given character to a number:
     #0-9 -> 0-9
-    #
+    #A-Z -> 10-35
     def char_to_index(self, character):
         index = 0
         if character[0].isalpha():
@@ -64,6 +64,7 @@ class ImageReader:
 
         return index
 
+    #Reverse map char_to_index()
     def index_to_char(self, index):
         char = 0
         if index >= 10:
@@ -73,6 +74,7 @@ class ImageReader:
 
         return str(char)
 
+    #Store sample image to it's corresponding database file
     def storesample(self, sample, character, momentsdb=None, methoddb=HU):
         index = self.char_to_index(character)
 
@@ -118,7 +120,7 @@ class ImageReader:
         momentsdb = np.vstack((momentsdb, newdim[None]))
         self.storesample(sample, character, momentsdb=momentsdb, methoddb=methoddb)
 
-
+    #Match given image to one of the shapes in the database
     def matchshapes(self, shape, methoddb=HU):
         momentsdb = np.load(methoddb)
         func = 0
@@ -154,6 +156,8 @@ class ImageReader:
                     im_out[i][j] = HIGH
         return im_out
 
+    #Blob coloring algorithm to differantiate between distinct shapes/characters
+    #in a given binary image
     def blob_coloring_8_connected(self, bim):
         max_label = int(10000)
         nrow = bim.shape[0]
@@ -248,6 +252,7 @@ class ImageReader:
 
         return
 
+    #Gives the (x0, y0, x1, y1) rectangle coordinates surrounding distinct shapes in a given labels array
     def rectangles(self, labelsarr):
         nrow = labelsarr.shape[0]
         ncol = labelsarr.shape[1]
@@ -286,10 +291,11 @@ class ImageReader:
             rectangles = np.delete(rectangles, 0, 0)
 
         rectangles = sorted(rectangles, key=lambda item: ((item[2] - item[0])/2, (item[3] - item[1])/2))
-        #x0, y0, x1, y1
+        #TODO: Sort rectangles from left to right, top to bottom
         #rects[i][1], rects[i][0], rects[i][3], rects[i][2]
         return rectangles
 
+    #Calulate hu moments of a given image
     def hu_moments(self, image):
         rows = image.shape[0]
         cols = image.shape[1]
@@ -363,6 +369,7 @@ class ImageReader:
 
         return rotation_invariants
 
+    #Calculate R moments of a given hu moments array.
     def r_moments(self, hu_moments):
         r_moments = [] * 10
         r_moments[0] = np.sqrt(hu_moments[1]) / hu_moments[0]
@@ -378,6 +385,7 @@ class ImageReader:
 
         return r_moments
 
+    #Get the number of samples of a stored character in the database
     def getsamplecount(self, character, methoddb=HU):
         count = 0
         index = self.char_to_index(character)
@@ -390,6 +398,6 @@ class ImageReader:
 
         return count
 
-    #TODO
+    #TODO: Calculate zernike moments
     def zernike_moments(self, param):
         return 0
