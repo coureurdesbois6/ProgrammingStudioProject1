@@ -289,9 +289,8 @@ class ImageReader:
         if rectangles[0][2] == nrow-1 and rectangles[0][3] == ncol-1:
             rectangles = np.delete(rectangles, 0, 0)
 
-        rectangles = sorted(rectangles, key=lambda item: ((item[2] - item[0])/2, (item[3] - item[1])/2))
         #TODO: Sort rectangles from left to right, top to bottom
-        #rects[i][1], rects[i][0], rects[i][3], rects[i][2]
+        #rectangles = sorted(rectangles, key=lambda item: ((item[2] - item[0])/2, (item[3] - item[1])/2))
         return rectangles
 
     #Calulate hu moments of a given image
